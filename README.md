@@ -1,4 +1,4 @@
-# astrbot_plugin_minimax_cli
+# astrbot_plugin_MiniMax_CLI
 
 基于 `mmx-cli` 的 AstrBot 插件，用来把 MiniMax 的文本、图片、视频、音乐、纯音乐、语音、视觉理解和搜索能力接入 AstrBot。
 

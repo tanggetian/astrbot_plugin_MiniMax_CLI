@@ -194,7 +194,7 @@ class MiniMaxCliTool(FunctionTool):
 
 
 @register(
-    "astrbot_plugin_minimax_cli",
+    "astrbot_plugin_MiniMax_CLI",
     "MiniMax CLI Contributors",
     "通过 MiniMax CLI 调用 MiniMax Token Plan 能力",
     "1.0.0",
@@ -744,9 +744,10 @@ class MiniMaxCliPlugin(Star):
                     except Exception as retry_exc:
                         exc = retry_exc
             logger.exception("MiniMax CLI 后台任务执行失败")
-            await self._notify_llm_status(event, f"MiniMax {mode} 后台任务失败：{exc}")
+            error_message = self._format_error_message(mode, exc)
+            await self._notify_llm_status(event, f"MiniMax {mode} 后台任务失败：{error_message}")
             await self._send_plain_message(
-                unified_msg_origin, f"MiniMax CLI 后台任务执行失败：{exc}"
+                unified_msg_origin, f"MiniMax CLI 后台任务执行失败：{error_message}"
             )
 
     async def _send_output_message(
@@ -882,6 +883,34 @@ class MiniMaxCliPlugin(Star):
         if mode == "quota":
             return self._format_quota_output(output)
         return output
+
+    def _format_error_message(self, mode: str, exc: Exception) -> str:
+        message = self._redact_sensitive_text(str(exc)).strip()
+        api_message = self._extract_api_error_message(message)
+        if api_message:
+            if "new_sensitive" in api_message:
+                return self._sensitive_content_message(mode)
+            return api_message
+        if "new_sensitive" in message:
+            return self._sensitive_content_message(mode)
+        return message or "未知错误"
+
+    def _extract_api_error_message(self, message: str) -> str:
+        try:
+            data = json.loads(message)
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        error = data.get("error")
+        if not isinstance(error, dict):
+            return ""
+        return str(error.get("message") or "").strip()
+
+    def _sensitive_content_message(self, mode: str) -> str:
+        if mode == "image":
+            return "图片提示词触发了 MiniMax 内容安全审核，请删减或改写涉及身体、性暗示、年龄外貌等敏感描述后重试。"
+        return "输入内容触发了 MiniMax 内容安全审核，请删减或改写敏感描述后重试。"
 
     def _format_quota_output(self, output: str) -> str:
         try:
