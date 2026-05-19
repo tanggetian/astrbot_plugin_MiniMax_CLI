@@ -195,7 +195,7 @@ class MiniMaxCliTool(FunctionTool):
 
 @register(
     "astrbot_plugin_MiniMax_CLI",
-    "MiniMax CLI Contributors",
+    "唐格天",
     "通过 MiniMax CLI 调用 MiniMax Token Plan 能力",
     "1.0.0",
 )

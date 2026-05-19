@@ -3,7 +3,7 @@ display_name: MiniMax CLI
 desc: 通过 MiniMax CLI 在 AstrBot 中调用 MiniMax Token Plan 的文本、图片、视频、语音、音乐等能力。
 short_desc: 在 AstrBot 中使用 MiniMax CLI。
 version: 1.0.0
-author: "MiniMax CLI Contributors"
+author: "唐格天"
 astrbot_version: ">=4.0.0"
 support_platforms:
   - aiocqhttp
