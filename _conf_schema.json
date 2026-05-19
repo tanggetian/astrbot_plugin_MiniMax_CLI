@@ -1,0 +1,64 @@
+{
+  "api_key": {
+    "description": "MiniMax API Key",
+    "type": "string",
+    "hint": "请在 MiniMax 开放平台 Token Plan 页面获取 sk- 开头的 API Key，并在此处填写。插件会通过 mmx auth login --api-key 使用该密钥登录 CLI。若运行环境已经提前完成 mmx 登录，则 status/quota 可在未填写该项时继续使用。",
+    "obvious_hint": true,
+    "default": ""
+  },
+  "auto_install_cli": {
+    "description": "插件初始化时自动安装 MiniMax CLI",
+    "type": "bool",
+    "hint": "默认关闭。开启后，如果运行环境找不到 mmx 命令，插件会尝试执行 npm install -g mmx-cli。需要系统已安装 Node.js/npm，且 AstrBot 进程有全局安装权限。",
+    "default": false
+  },
+  "auto_login": {
+    "description": "插件初始化时自动登录 MiniMax CLI",
+    "type": "bool",
+    "hint": "开启后，插件加载时会使用上面的 API Key 执行 mmx auth login。",
+    "default": true
+  },
+  "enable_llm_tool": {
+    "description": "允许 LLM 自动调用 MiniMax CLI 工具",
+    "type": "bool",
+    "hint": "开启后，支持函数调用的模型可以根据用户对话内容自行决定调用 MiniMax 的文本、图片、视频、音乐、纯音乐、语音、视觉理解、网络搜索、余额查询等能力。",
+    "default": true
+  },
+  "enable_video_generation": {
+    "description": "允许生成视频",
+    "type": "bool",
+    "hint": "关闭后，/minimax video 和 LLM 自动调用的视频生成都会被拒绝。",
+    "default": true
+  },
+  "enable_music_generation": {
+    "description": "允许生成歌曲/纯音乐",
+    "type": "bool",
+    "hint": "关闭后，/minimax music、/minimax instrumental 和 LLM 自动调用的歌曲/纯音乐生成都会被拒绝。",
+    "default": true
+  },
+  "command_timeout": {
+    "description": "MiniMax CLI 命令超时时间（秒）",
+    "type": "int",
+    "hint": "普通命令超时时间（如 text、speech、search、vision）。",
+    "default": 120
+  },
+  "media_command_timeout": {
+    "description": "视频/音乐类命令超时时间（秒）",
+    "type": "int",
+    "hint": "video、music、instrumental 往往明显慢于普通命令，建议设置得更高。",
+    "default": 900
+  },
+  "notify_background_status": {
+    "description": "显示后台任务状态提示",
+    "type": "bool",
+    "hint": "开启后，生成类后台任务会显示“已提交后台任务”提示，并在成功完成后补一条“任务已完成”状态通知。关闭后只保留必要的结果、超时和失败反馈。",
+    "default": true
+  },
+  "media_result_delivery": {
+    "description": "歌曲/视频结果发送通道",
+    "type": "string",
+    "hint": "通过下拉框选择。media_message=歌曲走语音/音频通道、视频走视频通道；file_message=歌曲和视频都走标准文件上传组件。",
+    "options": ["media_message", "file_message"],
+    "default": "media_message"
+  }
+}
