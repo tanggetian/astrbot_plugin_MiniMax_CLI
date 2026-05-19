@@ -342,6 +342,10 @@ class MiniMaxCliPlugin(Star):
         )
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=3)
+        except asyncio.TimeoutError:
+            pass
         if self.config.get("notify_background_status", True):
             return (
                 f"已提交 MiniMax {mode} 后台任务，生成完成后插件会自动发送到当前对话。"
@@ -651,7 +655,7 @@ class MiniMaxCliPlugin(Star):
         command: tuple[str, ...],
         voice_candidates: list[str] | None = None,
         runtime_info: dict[str, str] | None = None,
-    ) -> None:
+    ) -> str:
         unified_msg_origin = event.unified_msg_origin
         try:
             if mode in {"music", "instrumental", "video"}:
@@ -676,6 +680,7 @@ class MiniMaxCliPlugin(Star):
                     event,
                     f"MiniMax {mode} 后台任务已完成，结果已发送到当前对话。",
                 )
+            return f"MiniMax {mode} 后台任务已完成，结果已发送到当前对话。"
         except asyncio.TimeoutError:
             await self._notify_llm_status(
                 event,
@@ -685,6 +690,7 @@ class MiniMaxCliPlugin(Star):
                 unified_msg_origin,
                 self._timeout_message(mode),
             )
+            return self._timeout_message(mode)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -709,13 +715,13 @@ class MiniMaxCliPlugin(Star):
                             await self._send_output_message(
                                 unified_msg_origin, mode, stdout, stderr, runtime_info
                             )
-                            return
+                            return f"MiniMax {mode} 后台任务已完成，结果已发送到当前对话。"
                         except asyncio.TimeoutError:
                             await self._send_plain_message(
                                 unified_msg_origin,
                                 self._timeout_message(mode),
                             )
-                            return
+                            return self._timeout_message(mode)
                         except asyncio.CancelledError:
                             raise
                         except Exception as retry_exc:
@@ -732,23 +738,26 @@ class MiniMaxCliPlugin(Star):
                         await self._send_output_message(
                             unified_msg_origin, mode, stdout, stderr, runtime_info
                         )
-                        return
+                        return f"MiniMax {mode} 后台任务已完成，结果已发送到当前对话。"
                     except asyncio.TimeoutError:
                         await self._send_plain_message(
                             unified_msg_origin,
                             self._timeout_message(mode),
                         )
-                        return
+                        return self._timeout_message(mode)
                     except asyncio.CancelledError:
                         raise
                     except Exception as retry_exc:
                         exc = retry_exc
             logger.exception("MiniMax CLI 后台任务执行失败")
             error_message = self._format_error_message(mode, exc)
-            await self._notify_llm_status(event, f"MiniMax {mode} 后台任务失败：{error_message}")
+            await self._notify_llm_status(
+                event, f"MiniMax {mode} 后台任务失败：{error_message}"
+            )
             await self._send_plain_message(
                 unified_msg_origin, f"MiniMax CLI 后台任务执行失败：{error_message}"
             )
+            return f"MiniMax CLI 后台任务执行失败：{error_message}"
 
     async def _send_output_message(
         self,
@@ -909,7 +918,10 @@ class MiniMaxCliPlugin(Star):
 
     def _sensitive_content_message(self, mode: str) -> str:
         if mode == "image":
-            return "图片提示词触发了 MiniMax 内容安全审核，请删减或改写涉及身体、性暗示、年龄外貌等敏感描述后重试。"
+            return (
+                "图片提示词触发了 MiniMax 内容安全审核，"
+                "请删减或改写涉及身体、性暗示、年龄外貌等敏感描述后重试。"
+            )
         return "输入内容触发了 MiniMax 内容安全审核，请删减或改写敏感描述后重试。"
 
     def _format_quota_output(self, output: str) -> str:
