@@ -197,7 +197,7 @@ class MiniMaxCliTool(FunctionTool):
     "astrbot_plugin_MiniMax_CLI",
     "唐格天",
     "通过 MiniMax CLI 调用 MiniMax Token Plan 能力",
-    "1.0.0",
+    "1.2.0",
 )
 class MiniMaxCliPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -207,6 +207,8 @@ class MiniMaxCliPlugin(Star):
         self.mmx_path = shutil.which("mmx")
         self.npm_path = shutil.which("npm") or shutil.which("npm.cmd")
         self.background_tasks = set()
+        self.generation_locks: dict[str, asyncio.Lock] = {}
+        self.generation_queue_sizes: dict[str, int] = {}
         self.llm_tool = MiniMaxCliTool()
         self.llm_tool.plugin = self
         if self.config.get("enable_llm_tool", True):
@@ -335,22 +337,61 @@ class MiniMaxCliPlugin(Star):
         voice_candidates = options.get("voice_candidates") if mode == "speech" else None
         runtime_info = self._build_runtime_info(event)
         logger.info("MiniMax runtime info resolved: %s", runtime_info)
+        queue_key = self._queue_key_for_mode(mode)
+        queue_lock = self._generation_lock(queue_key)
+        queue_size = self._increment_queue_size(queue_key)
+        is_queued = queue_size > 1
         task = asyncio.create_task(
-            self._run_llm_background_job(
-                event, mode, command, voice_candidates, runtime_info
+            self._run_queued_llm_background_job(
+                event, mode, command, voice_candidates, runtime_info, queue_key, queue_lock
             )
         )
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)
+        if is_queued:
+            if self.config.get("notify_background_status", True):
+                message = (
+                    f"已加入 MiniMax {mode} 队列，当前同类队列共有 {queue_size} 个任务，前面还有 {queue_size - 1} 个任务等待处理。生成完成后插件会自动发送到当前对话。"
+                )
+                await self._notify_llm_status(event, message)
+                return message
+            return f"MiniMax {mode} 队列任务已提交，前面还有 {queue_size - 1} 个同类任务。"
         try:
             return await asyncio.wait_for(asyncio.shield(task), timeout=3)
         except asyncio.TimeoutError:
             pass
         if self.config.get("notify_background_status", True):
-            return (
-                f"已提交 MiniMax {mode} 后台任务，生成完成后插件会自动发送到当前对话。"
+            message = (
+                f"已提交 MiniMax {mode} 后台任务，当前同类队列共有 {queue_size} 个任务，生成完成后插件会自动发送到当前对话。"
             )
+            await self._notify_llm_status(event, message)
+            return message
         return f"MiniMax {mode} 后台任务已启动。"
+
+    def _generation_lock(self, queue_key: str) -> asyncio.Lock:
+        lock = self.generation_locks.get(queue_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self.generation_locks[queue_key] = lock
+        return lock
+
+    def _queue_key_for_mode(self, mode: str) -> str:
+        if mode in {"music", "instrumental"}:
+            return "music"
+        return mode
+
+    def _increment_queue_size(self, queue_key: str) -> int:
+        size = self.generation_queue_sizes.get(queue_key, 0) + 1
+        self.generation_queue_sizes[queue_key] = size
+        return size
+
+    def _decrement_queue_size(self, queue_key: str) -> int:
+        size = max(self.generation_queue_sizes.get(queue_key, 0) - 1, 0)
+        if size:
+            self.generation_queue_sizes[queue_key] = size
+        else:
+            self.generation_queue_sizes.pop(queue_key, None)
+        return size
 
     def _resolve_tool_request(self, action: str, content: str) -> tuple[str, str]:
         raw_action = (action or "").strip()
@@ -648,6 +689,36 @@ class MiniMaxCliPlugin(Star):
             return
         yield event.plain_result(self._format_text_output(mode, output))
 
+    async def _run_queued_llm_background_job(
+        self,
+        event: AstrMessageEvent,
+        mode: str,
+        command: tuple[str, ...],
+        voice_candidates: list[str] | None,
+        runtime_info: dict[str, str] | None,
+        queue_key: str,
+        queue_lock: asyncio.Lock,
+    ) -> str:
+        acquired = False
+        try:
+            async with queue_lock:
+                acquired = True
+                remaining = self._decrement_queue_size(queue_key)
+                logger.info(
+                    "MiniMax %s queue slot acquired for mode=%s", queue_key, mode
+                )
+                if remaining and self.config.get("notify_background_status", True):
+                    await self._notify_llm_status(
+                        event,
+                        f"MiniMax {mode} 排队任务已开始生成，当前同类队列剩余 {remaining} 个任务。",
+                    )
+                return await self._run_llm_background_job(
+                    event, mode, command, voice_candidates, runtime_info
+                )
+        finally:
+            if not acquired:
+                self._decrement_queue_size(queue_key)
+
     async def _run_llm_background_job(
         self,
         event: AstrMessageEvent,
@@ -669,8 +740,8 @@ class MiniMaxCliPlugin(Star):
                 logger.info(
                     "MiniMax %s background job finished: stdout=%s stderr=%s",
                     mode,
-                    (stdout or "").strip(),
-                    (stderr or "").strip(),
+                    self._redact_sensitive_text((stdout or "").strip()),
+                    self._redact_sensitive_text((stderr or "").strip()),
                 )
             await self._send_output_message(
                 unified_msg_origin, mode, stdout, stderr, runtime_info
