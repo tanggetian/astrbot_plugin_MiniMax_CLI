@@ -5,6 +5,7 @@ import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from astrbot.api import AstrBotConfig, FunctionTool, logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
@@ -1422,7 +1423,7 @@ class MiniMaxCliPlugin(Star):
 
     def _build_vision_command(self, prompt: str) -> tuple[str, ...]:
         parts = prompt.split(maxsplit=1)
-        image = parts[0]
+        image = self._normalize_vision_image_reference(parts[0])
         question = parts[1].strip() if len(parts) > 1 else ""
         if image.startswith("file-"):
             command = ["vision", "describe", "--file-id", image]
@@ -1431,6 +1432,21 @@ class MiniMaxCliPlugin(Star):
         if question:
             command.extend(["--prompt", question])
         return tuple(command)
+
+    @staticmethod
+    def _normalize_vision_image_reference(image: str) -> str:
+        """Convert file URIs to paths accepted by mmx vision describe."""
+        value = (image or "").strip()
+        if not value.startswith("file:"):
+            return value
+
+        parsed = urlparse(value)
+        path = unquote(parsed.path or "")
+        if parsed.netloc:
+            path = f"//{parsed.netloc}{path}"
+        if len(path) >= 3 and path[0] == "/" and path[2] == ":":
+            path = path[1:]
+        return str(Path(path))
 
     async def _install_mmx_cli(self) -> None:
         if not self.npm_path:
